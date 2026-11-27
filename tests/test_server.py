@@ -13,7 +13,11 @@ class ServerTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.log_path = Path(self.tempdir.name) / "events.jsonl"
-        self.server = MirrorServer(("127.0.0.1", 0), EventLog(self.log_path))
+        self.server = MirrorServer(
+            ("127.0.0.1", 0),
+            EventLog(self.log_path),
+            control_token="test-control-token-that-is-at-least-32-characters",
+        )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 

@@ -53,17 +53,17 @@ state disappears when the server stops.
 Start directly in wartime mode:
 
 ```sh
-HOM_CONTROL_TOKEN=replace-with-a-random-value \
-  python -m house_of_mirrors.server --mode wartime --tarpit-ms 150
+export HOM_CONTROL_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+python -m house_of_mirrors.server --mode wartime --tarpit-ms 150
 ```
 
-Toggle a running server from the same host using the control token printed at
-startup (remote control attempts are rejected):
+Toggle a running server from the same host using the `HOM_CONTROL_TOKEN` value
+supplied at launch (the service never prints it; remote control attempts are rejected):
 
 ```sh
 curl -sS -X POST http://127.0.0.1:8080/__mirror__/control/mode \
   -H 'Content-Type: application/json' \
-  -H 'X-Control-Token: replace-with-a-random-value' \
+  -H "X-Control-Token: $HOM_CONTROL_TOKEN" \
   -d '{"mode":"wartime"}'
 ```
 
@@ -96,6 +96,13 @@ rule is in `detections/example_rules.yml`.
 - Decoys contain fabricated data only. Never place real credentials in them.
 - Logs may contain source addresses and user-agent strings; handle them under
   your organization's retention and privacy policy.
+- Optional defense modes are `simulation` (default) and `wartime`. Wartime mode
+  returns a bounded 429 response with a configurable delay after a synthetic
+  session reaches `contained`; it never contacts or attacks the visitor.
+- The local mode-control endpoint is disabled unless `HOM_CONTROL_TOKEN` is set
+  (or `--control-token` is supplied). It accepts requests only from loopback and
+  requires `X-Control-Token`. Use the environment variable rather than a
+  command-line token; the service never prints the token or writes it to telemetry.
 
 ## Commands
 
