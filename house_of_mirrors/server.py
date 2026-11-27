@@ -41,11 +41,13 @@ class SyntheticSession:
 class DefenseController:
     """Thread-safe defensive posture shared by every request handler."""
 
-    def __init__(self, mode: str, control_token: str, tarpit_ms: int = 150) -> None:
+    def __init__(self, mode: str, control_token: str | None, tarpit_ms: int = 150) -> None:
         if mode not in VALID_MODES:
             raise ValueError(f"mode must be one of: {', '.join(sorted(VALID_MODES))}")
         if not 0 <= tarpit_ms <= 1000:
             raise ValueError("tarpit_ms must be between 0 and 1000")
+        if control_token is not None and (len(control_token) < 32 or not control_token.isascii()):
+            raise ValueError("control_token must be at least 32 ASCII characters")
         self._mode = mode
         self.control_token = control_token
         self.tarpit_ms = tarpit_ms
@@ -132,9 +134,17 @@ class MirrorHandler(BaseHTTPRequestHandler):
         if self.client_address[0] not in {"127.0.0.1", "::1"}:
             self._control_response(HTTPStatus.FORBIDDEN, {"error": "local control only"})
             return
+        expected = self.defense.control_token
         supplied = self.headers.get("X-Control-Token", "")
-        if not hmac.compare_digest(supplied, self.defense.control_token):
-            self._control_response(HTTPStatus.FORBIDDEN, {"error": "invalid control token"})
+        try:
+            authorized = expected is not None and hmac.compare_digest(supplied, expected)
+        except TypeError:
+            authorized = False
+        if not authorized:
+            if self.headers.get("Content-Length", "0") != "0":
+                self.close_connection = True
+            message = "control API disabled" if expected is None else "invalid control token"
+            self._control_response(HTTPStatus.FORBIDDEN, {"error": message})
             return
         if self.command in {"GET", "HEAD"}:
             self._control_response(HTTPStatus.OK, {"mode": self.defense.mode})
@@ -144,6 +154,9 @@ class MirrorHandler(BaseHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
+            if length > 256:
+                self.close_connection = True
+                raise ValueError
             if not 1 <= length <= 256:
                 raise ValueError
             payload = json.loads(self.rfile.read(length))
@@ -339,7 +352,7 @@ class MirrorServer(ThreadingHTTPServer):
         self.sessions = SessionStore()
         self.defense = DefenseController(
             mode,
-            control_token or secrets.token_urlsafe(24),
+            control_token,
             tarpit_ms,
         )
 
@@ -373,7 +386,10 @@ def main() -> None:
     print(f"House of Mirrors listening on http://{host}:{port}")
     print(f"Telemetry: {args.log}")
     print(f"Defense mode: {server.defense.mode}")
-    print(f"Local control token: {server.defense.control_token}")
+    if server.defense.control_token is None:
+        print("Local mode control disabled; set HOM_CONTROL_TOKEN to enable it.")
+    else:
+        print("Local mode control enabled; token omitted from output.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
