@@ -1,0 +1,5 @@
+title: House of Mirrors contained session
+match:
+  assimilation_stage: contained
+severity: high
+group_by: [source_ip, session_id, request_id]
