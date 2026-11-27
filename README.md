@@ -37,6 +37,39 @@ Then stop the server with `Ctrl-C` and inspect the telemetry:
 python -m house_of_mirrors.verify logs/events.jsonl
 ```
 
+## Defense modes
+
+- `simulation` is the default. It serves every decoy and records the complete
+  exercise without blocking the synthetic attacker.
+- `wartime` actively contains sessions once their risk score reaches the
+  threshold. Contained requests receive a bounded delay, HTTP 429 denial, and a
+  `Retry-After` response. This is local defense; the server never makes an
+  outbound request to the visitor.
+
+Cookie-less scanners are correlated in memory by source address and user agent,
+so simply refusing the decoy cookie does not reset the wartime risk score. This
+state disappears when the server stops.
+
+Start directly in wartime mode:
+
+```sh
+HOM_CONTROL_TOKEN=replace-with-a-random-value \
+  python -m house_of_mirrors.server --mode wartime --tarpit-ms 150
+```
+
+Toggle a running server from the same host using the control token printed at
+startup (remote control attempts are rejected):
+
+```sh
+curl -sS -X POST http://127.0.0.1:8080/__mirror__/control/mode \
+  -H 'Content-Type: application/json' \
+  -H 'X-Control-Token: replace-with-a-random-value' \
+  -d '{"mode":"wartime"}'
+```
+
+Use `{"mode":"simulation"}` to switch back. Mode changes and defensive
+actions are written to the hash-chained event log.
+
 ## Defensive exercise
 
 Scenario: an authorized red-team operator performs discovery against a decoy
